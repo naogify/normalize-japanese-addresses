@@ -105,8 +105,15 @@ export const normalize = async (address: string) => {
       town = kan2num(towns[i])
       addr = addr.replace(regex, '') // 町丁目以降の住所
       break
-    } else if ('京都府' === pref && 0 <= addr.lastIndexOf(_town)) {
+      // 京都の通り名は字が2回出てくるので最後だけ取得する。でもここは単に字が含まれるか見るだけ。
+    } else if ('京都府' === pref && addr.match(regex)) {
+      // 0 <= addr.lastIndexOf(_town)
       town = kan2num(towns[i])
+      // ここの正規表現で、丁目以下をとれてない。通り名丁目を含んでる
+      console.log({_town})
+      // ここで、addr.lastIndexOf(_town)　を使って最後のindex出して、ぶん
+
+      // 最後に出てきたキーワード以降を取得するという正規表現
       const reg = new RegExp(`^.*${_town}`)
       addr = addr.replace(reg, '') // 町丁目以降の住所
     }
