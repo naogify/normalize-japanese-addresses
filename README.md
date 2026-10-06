@@ -87,6 +87,24 @@ normalize('北海道札幌市西区24-2-2-3-3', { level: 1 }).then(result => {
 })
 ```
 
+#### 住居表示の町字に地番が来たとき（`allowParcelFallback`）
+
+町字が住居表示（`rsdt: true`）のとき、既定では住居表示データだけを引きます。入力が地番（`2876-1` のような番-枝番）だと、その町字に地番データがあっても `level: 3` で止まります。`allowParcelFallback: true` を指定すると、住居表示データに当たらなかった場合に限り、地番データの完全一致を探します。
+
+```javascript
+normalize('埼玉県越谷市南越谷1-2876-1', { allowParcelFallback: true }).then(result => {
+  // result.level === 3 // 住居表示の町での地番解釈は未検証なので level は 8 にならない
+  // result.addr === "2876-1"
+  // result.addrSource === "parcel-unverified"
+  // result.metadata.chiban // 地番レコード
+})
+```
+
+* **住居表示の町での地番解釈は未検証です。** 住居表示の「街区-住居番号」と地番の「番-枝番」は別の体系で、数字列が偶然一致しても別の土地になります。そのため `level` は 3 のまま、`addrSource: 'parcel-unverified'` を付けて返します。既定は `false` です。
+* 地番として扱ってよいかは、`addrSource` を見て呼び出し側で判断してください。住居表示の町でも地番で書かれた住所が混ざることがあり、見た目では区別できません。
+* **印が正しい地番の町は、このオプションなしで通常経路の `level: 8` になります。** 実際は住居表示を実施していないのにデータの `rsdt` 印が `true` の町は、このオプションではなく、データ側（[japanese-addresses-v2](https://github.com/geolonia/japanese-addresses-v2)）で `rsdt` 印を直すことが前提です。
+* 地番データに座標が無い行では、`point` は大字・丁目の代表点（`point.level` は 3）のままです。
+
 ### エラー処理
 
 `normalize()` は住所データの取得に失敗した場合、例外を投げます。取得できなかった住所を低い `level` で返すことはしません。低い `level` が返るのは、入力された住所文字列をそこまでしか判別できなかった場合だけです。

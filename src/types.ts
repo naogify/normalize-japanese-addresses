@@ -133,6 +133,12 @@ export type NormalizeResult = {
   town?: string
   /** 住居表示または地番 */
   addr?: string
+  /**
+   * `addr` を通常の完全一致以外の規則で埋めたときの理由。完全一致のときは付かない。
+   * - `parcel-unverified` - 住居表示の町字で住居表示データに当たらず、地番データの完全一致を
+   *   未検証の解釈として埋めた（`allowParcelFallback` を有効にしたときだけ）。このとき `level` は 3 のまま。
+   */
+  addrSource?: 'parcel-unverified'
   /** 正規化後の住所文字列。完全に正規化された場合は、空の文字列が入ります。 */
   other: string
 
