@@ -137,23 +137,31 @@ async function normalizeAddrPart(
   town: SingleMachiAza,
   apiVersion: number,
 ): Promise<NormalizedAddrPart> {
+  // 各項は 0 始まり（`02番16号` → `02-16`）を許す。値が 0 の項（`0`, `00`）は番地として読まない
   const match = addr.match(
-    /^([1-9][0-9]*)(?:-([1-9][0-9]*))?(?:-([1-9][0-9]*))?/,
+    /^(0*[1-9][0-9]*)(?:-(0*[1-9][0-9]*))?(?:-(0*[1-9][0-9]*))?/,
   )
   if (!match) {
     return {
       rest: addr,
     }
   }
+  // データ側の表記（先頭の 0 なし）に合わせて照合用の文字列を作る
+  const matched = match[0]
+  const key = match
+    .slice(1)
+    .filter((part) => typeof part !== 'undefined')
+    .map((part) => part.replace(/^0+/, ''))
+    .join('-')
   // TODO: rsdtの場合はrsdtと地番を両方取得する
   if (town.rsdt) {
     const res = await getRsdt(pref, city, town, apiVersion)
     for (const rsdt of res) {
       const addrPart = rsdtToString(rsdt)
-      if (match[0] === addrPart) {
+      if (key === addrPart) {
         return {
           rsdt,
-          rest: addr.substring(addrPart.length),
+          rest: addr.substring(matched.length),
         }
       }
     }
@@ -161,10 +169,10 @@ async function normalizeAddrPart(
     const res = await getChiban(pref, city, town, apiVersion)
     for (const chiban of res) {
       const addrPart = chibanToString(chiban)
-      if (match[0] === addrPart) {
+      if (key === addrPart) {
         return {
           chiban,
-          rest: addr.substring(addrPart.length),
+          rest: addr.substring(matched.length),
         }
       }
     }

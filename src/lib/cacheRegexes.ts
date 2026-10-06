@@ -457,6 +457,16 @@ export const getChiban = async (
   return parsed
 }
 
+/**
+ * 町字名を「丁目より前の名前」「丁目の漢数字」「丁目」に分ける正規表現。
+ *
+ * 行頭・行末に固定する。固定しないと `四谷一丁目` が先頭の `四` を飛ばして
+ * `谷` + `一` + `丁目` と分割され、町名に漢数字（一〜十）を含む町字
+ * （四谷・三田・六本木・九段南など）で「丁目の省略」パターンが生成されなくなる。
+ * 名前部分は非貪欲にして、`東新井二十二丁目` が `東新井` + `二十二` と分かれるようにする。
+ */
+const CHOME_NAME_PATTERN = /^(.+?)([一二三四五六七八九十]+)(丁目?)$/
+
 // 十六町 のように漢数字と町が連結しているか
 const isKanjiNumberFollewedByCho = (targetTownName: string) => {
   const xCho = targetTownName.match(/.町/g)
@@ -586,9 +596,7 @@ export const getTownRegexPatterns = async (
 
         // X丁目の丁目なしの数字だけの場合で、数字以外が続いたり終端が現れる場合は確度が高いので、先にマッチさせる
         {
-          const chomeMatch = machiAzaName(town).match(
-            /([^一二三四五六七八九十]+)([一二三四五六七八九十]+)(丁目?)/,
-          )
+          const chomeMatch = machiAzaName(town).match(CHOME_NAME_PATTERN)
           if (!chomeMatch) {
             continue
           }
@@ -603,16 +611,15 @@ export const getTownRegexPatterns = async (
 
       // X丁目の丁目なしの数字だけ許容するため、最後に数字だけ追加していく
       for (const town of towns) {
-        const chomeMatch = machiAzaName(town).match(
-          /([^一二三四五六七八九十]+)([一二三四五六七八九十]+)(丁目?)/,
-        )
+        const chomeMatch = machiAzaName(town).match(CHOME_NAME_PATTERN)
         if (!chomeMatch) {
           continue
         }
         const chomeNamePart = chomeMatch[1]
         const chomeNum = chomeMatch[2]
+        // 後ろに数字が続く場合は丁目の省略ではない（`総社1130-2` を `総社一丁目` + `130-2` と誤認しない）
         const pattern = toRegexPattern(
-          `^${chomeNamePart}(${chomeNum}|${kan2num(chomeNum)})`,
+          `^${chomeNamePart}(${chomeNum}|${kan2num(chomeNum)})(?![0-9])`,
         )
         patterns.push([town, pattern])
       }
