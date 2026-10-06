@@ -60,6 +60,12 @@ describe('0 始まりの番地', () => {
     })
   })
 
+  test('2 項目目以降の 0 始まりは番地に含めず、手前までで照合する', async () => {
+    // `1-031` は部屋番号。`16-031` を番地として読んで外れてはいけない
+    const res = await normalize('兵庫県神戸市東灘区森南町1丁目5-1-017')
+    assertMatchCloseTo(res, { addr: '5-1', other: '-017', level: 8 })
+  })
+
   test('値が 0 の番地は番地として読まない', async () => {
     const res = await normalize('広島県呉市海岸3丁目00番16号')
     assert.strictEqual(res.level, 3)
