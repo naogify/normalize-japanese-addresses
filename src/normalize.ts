@@ -75,6 +75,17 @@ export interface Option {
   level?: number
 
   geoloniaApiKey?: string
+
+  /**
+   * 住居表示の町字で住居表示データに当たらないとき、地番データを引くか。既定は `false`。
+   *
+   * 住居表示の「街区-住居番号」と地番の「番-枝番」は別の体系で、数字列が偶然一致することが
+   * 日常的にある（住居表示データの無い町字の入力の 64% が、同じ数列を地番データにも持っていた）。
+   * そのため既定では何もしない。`true` のとき、住居表示で見つからなかった場合に限り地番の完全一致を
+   * 探し、見つかれば `level: 8`・`addrSource: 'parcel'` で返す。呼び出し側は `addrSource` を見て
+   * 地番として扱うか決めること。地番データに座標が無い行では `point` は町字の代表点のままになる。
+   */
+  allowParcelFallback?: boolean
 }
 
 /**
@@ -128,6 +139,8 @@ const normalizeTownName = async (
 type NormalizedAddrPart = {
   chiban?: SingleChiban
   rsdt?: SingleRsdt
+  /** 住居表示の町字で地番データにフォールバックして確定したか */
+  parcelFallback?: boolean
   rest: string
 }
 async function normalizeAddrPart(
@@ -136,6 +149,7 @@ async function normalizeAddrPart(
   city: SingleCity,
   town: SingleMachiAza,
   apiVersion: number,
+  allowParcelFallback: boolean,
 ): Promise<NormalizedAddrPart> {
   const match = addr.match(
     /^([1-9][0-9]*)(?:-([1-9][0-9]*))?(?:-([1-9][0-9]*))?/,
@@ -154,6 +168,20 @@ async function normalizeAddrPart(
         return {
           rsdt,
           rest: addr.substring(addrPart.length),
+        }
+      }
+    }
+    // 住居表示で見つからなかったときに限り、地番の完全一致を探す（住居表示を先に引く順序は固定）
+    if (allowParcelFallback) {
+      const chibanList = await getChiban(pref, city, town, apiVersion)
+      for (const chiban of chibanList) {
+        const addrPart = chibanToString(chiban)
+        if (match[0] === addrPart) {
+          return {
+            chiban,
+            parcelFallback: true,
+            rest: addr.substring(addrPart.length),
+          }
         }
       }
     }
@@ -190,6 +218,7 @@ export const normalize: Normalizer = async (
   let town: SingleMachiAza | undefined
   let point: NormalizeResultPoint | undefined
   let addr: string | undefined
+  let addrSource: NormalizeResult['addrSource']
   let level = 0
 
   // 都道府県名の正規化
@@ -375,6 +404,7 @@ export const normalize: Normalizer = async (
     city!,
     town!,
     apiVersion,
+    option.allowParcelFallback ?? false,
   )
   // TODO: rsdtと地番を両方対応した時に両方返すけど、今はrsdtを優先する
   if (normalizedAddrPart.rsdt) {
@@ -387,6 +417,9 @@ export const normalize: Normalizer = async (
     level = 8
   } else if (normalizedAddrPart.chiban) {
     addr = chibanToString(normalizedAddrPart.chiban)
+    if (normalizedAddrPart.parcelFallback) {
+      addrSource = 'parcel'
+    }
     other = normalizedAddrPart.rest
     point = upgradePoint(
       point,
@@ -399,6 +432,8 @@ export const normalize: Normalizer = async (
     city: city ? cityName(city) : undefined,
     town: town ? machiAzaName(town) : undefined,
     addr,
+    // 完全一致以外の規則で確定したときだけ付ける（既存の結果の形を変えない）
+    ...(addrSource ? { addrSource } : {}),
     level,
     point,
     other,
