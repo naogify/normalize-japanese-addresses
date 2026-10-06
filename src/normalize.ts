@@ -30,11 +30,13 @@ import {
   machiAzaToResultPoint,
   NormalizeResult,
   NormalizeResultPoint,
+  ParentOfChildrenEvidence,
   prefectureToResultPoint,
   rsdtOrChibanToResultPoint,
   upgradePoint,
 } from './types'
 import {
+  distanceMeters,
   removeCitiesFromPrefecture,
   removeExtraFromMachiAza,
 } from './lib/utils'
@@ -75,6 +77,17 @@ export interface Option {
   level?: number
 
   geoloniaApiKey?: string
+
+  /**
+   * 地番データに親番号が無く子番号だけがあるとき、親番号を確定扱いにするか。既定は `false`。
+   *
+   * 分筆で親番号の地番が消えた町字では、`323` が無く `323-1`, `323-2` … だけが
+   * データにあることがある。`true` のとき、入力が親番号だけならその町字を
+   * `level: 8`・`addrSource: 'parent-of-children'` で返し、`point` は子番号の座標の重心にする。
+   * 子番号の座標が 1 km 以上散らばるときは、親番号が別の地点を指している可能性が高いので採用しない。
+   * 地番の町字のみが対象で、住居表示の町字では何もしない。
+   */
+  allowParentOfChildren?: boolean
 }
 
 /**
@@ -125,9 +138,65 @@ const normalizeTownName = async (
   }
 }
 
+/** 子番号の座標がこの距離（メートル）以上散らばる親番号は採用しない */
+const PARENT_MAX_SPREAD_METERS = 1_000
+
+type ParentOfChildren = {
+  addr: string
+  point?: NormalizeResultPoint
+  evidence: ParentOfChildrenEvidence
+}
+
+/**
+ * 親番号が子番号群の接頭辞として存在するかを調べる。
+ *
+ * @param chibanList - 町字の地番データ
+ * @param parent - 入力の番地（例 `323`）
+ * @returns 子番号（`323-1` など）があり、座標の散らばりが許容範囲なら親番号の情報。無ければ `undefined`
+ */
+function findParentOfChildren(
+  chibanList: SingleChiban[],
+  parent: string,
+): ParentOfChildren | undefined {
+  const prefix = `${parent}-`
+  const children = chibanList.filter((chiban) =>
+    chibanToString(chiban).startsWith(prefix),
+  )
+  if (children.length === 0) {
+    return undefined
+  }
+
+  // 座標を持つ子番号の重心と、重心からの最大距離を求める
+  const points = children.flatMap((chiban) =>
+    chiban.point ? [chiban.point] : [],
+  )
+  if (points.length === 0) {
+    return {
+      addr: parent,
+      evidence: { count: children.length, spreadMeters: null },
+    }
+  }
+  const centroid: [number, number] = [
+    points.reduce((sum, p) => sum + p[0], 0) / points.length,
+    points.reduce((sum, p) => sum + p[1], 0) / points.length,
+  ]
+  const spreadMeters = Math.max(
+    ...points.map((p) => distanceMeters(centroid, p)),
+  )
+  if (spreadMeters >= PARENT_MAX_SPREAD_METERS) {
+    return undefined
+  }
+  return {
+    addr: parent,
+    point: { lng: centroid[0], lat: centroid[1], level: 8 },
+    evidence: { count: children.length, spreadMeters },
+  }
+}
+
 type NormalizedAddrPart = {
   chiban?: SingleChiban
   rsdt?: SingleRsdt
+  parent?: ParentOfChildren
   rest: string
 }
 async function normalizeAddrPart(
@@ -136,6 +205,7 @@ async function normalizeAddrPart(
   city: SingleCity,
   town: SingleMachiAza,
   apiVersion: number,
+  allowParentOfChildren: boolean,
 ): Promise<NormalizedAddrPart> {
   const match = addr.match(
     /^([1-9][0-9]*)(?:-([1-9][0-9]*))?(?:-([1-9][0-9]*))?/,
@@ -168,6 +238,16 @@ async function normalizeAddrPart(
         }
       }
     }
+    // 完全一致が無いとき、親番号が子番号群の接頭辞として存在すれば親番号を確定扱いにする
+    if (allowParentOfChildren) {
+      const parent = findParentOfChildren(res, match[0])
+      if (parent) {
+        return {
+          parent,
+          rest: addr.substring(match[0].length),
+        }
+      }
+    }
   }
   return {
     rest: addr,
@@ -190,6 +270,7 @@ export const normalize: Normalizer = async (
   let town: SingleMachiAza | undefined
   let point: NormalizeResultPoint | undefined
   let addr: string | undefined
+  let addrSource: NormalizeResult['addrSource']
   let level = 0
 
   // 都道府県名の正規化
@@ -375,6 +456,7 @@ export const normalize: Normalizer = async (
     city!,
     town!,
     apiVersion,
+    option.allowParentOfChildren ?? false,
   )
   // TODO: rsdtと地番を両方対応した時に両方返すけど、今はrsdtを優先する
   if (normalizedAddrPart.rsdt) {
@@ -393,12 +475,20 @@ export const normalize: Normalizer = async (
       rsdtOrChibanToResultPoint(normalizedAddrPart.chiban),
     )
     level = 8
+  } else if (normalizedAddrPart.parent) {
+    addr = normalizedAddrPart.parent.addr
+    other = normalizedAddrPart.rest
+    point = upgradePoint(point, normalizedAddrPart.parent.point)
+    addrSource = 'parent-of-children'
+    level = 8
   }
   const result: NormalizeResult = {
     pref: pref ? prefectureName(pref) : undefined,
     city: city ? cityName(city) : undefined,
     town: town ? machiAzaName(town) : undefined,
     addr,
+    // 完全一致以外の規則で確定したときだけ付ける（既存の結果の形を変えない）
+    ...(addrSource ? { addrSource } : {}),
     level,
     point,
     other,
@@ -409,6 +499,9 @@ export const normalize: Normalizer = async (
       machiAza: removeExtraFromMachiAza(town),
       rsdt: normalizedAddrPart.rsdt,
       chiban: normalizedAddrPart.chiban,
+      ...(normalizedAddrPart.parent
+        ? { parentOfChildren: normalizedAddrPart.parent.evidence }
+        : {}),
     },
   }
   return result

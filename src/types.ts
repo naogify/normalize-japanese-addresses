@@ -105,6 +105,20 @@ export function upgradePoint(
   return b
 }
 
+/**
+ * 親番号を子番号群から確定したときの根拠。
+ * {@link NormalizeResult.addrSource} が `parent-of-children` のときだけ付く。
+ */
+export type ParentOfChildrenEvidence = {
+  /** 親番号を接頭辞に持つ子番号（`323-1` など）の数 */
+  count: number
+  /**
+   * 座標を持つ子番号について、重心から最も遠い子までの距離（メートル）。
+   * 座標を持つ子が 1 つも無いときは `null`（その場合 `point` は町字の代表点のまま）。
+   */
+  spreadMeters: number | null
+}
+
 export type NormalizeResultMetadata = {
   input: string
 
@@ -118,6 +132,8 @@ export type NormalizeResultMetadata = {
   chiban?: SingleChiban
   /** 住居表示住所 */
   rsdt?: SingleRsdt
+  /** 親番号を子番号群から確定したときの根拠 */
+  parentOfChildren?: ParentOfChildrenEvidence
 }
 
 export type NormalizeResult = {
@@ -133,6 +149,12 @@ export type NormalizeResult = {
   town?: string
   /** 住居表示または地番 */
   addr?: string
+  /**
+   * `addr` を通常の完全一致以外の規則で確定したときの理由。完全一致のときは付かない。
+   * - `parent-of-children` - 地番データに親番号そのものは無く、子番号（`323-1` など）だけがあった。
+   *   `point` は子番号の座標の重心。
+   */
+  addrSource?: 'parent-of-children'
   /** 正規化後の住所文字列。完全に正規化された場合は、空の文字列が入ります。 */
   other: string
 

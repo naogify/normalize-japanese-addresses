@@ -87,6 +87,24 @@ normalize('北海道札幌市西区24-2-2-3-3', { level: 1 }).then(result => {
 })
 ```
 
+#### 親番号が地番データに無いとき（`allowParentOfChildren`）
+
+分筆で親番号の地番が消えた町字では、`323` が無く `323-1`, `323-2` … だけが地番データにあることがあります。`allowParentOfChildren: true` を指定すると、入力が親番号だけのとき、その町字を `level: 8` で返します。既定は `false` で、従来どおり `level: 3` で止まります。
+
+```javascript
+normalize('愛知県瀬戸市效範町2丁目72', { allowParentOfChildren: true }).then(result => {
+  // result.addr === "72"
+  // result.addrSource === "parent-of-children" // 完全一致ではなく、子番号から親番号を確定した
+  // result.point.level === 8 // 子番号の座標の重心
+  // result.metadata.parentOfChildren // { count: 3, spreadMeters: 4.8 }
+})
+```
+
+* `addrSource` は完全一致以外の規則で `addr` を確定したときだけ付きます。
+* 子番号の座標が 1 km 以上散らばるときは、親番号が別の地点を指している可能性が高いので採用しません。
+* 子番号に座標が無いときは `level: 8` ですが、`point` は大字・丁目の代表点（`point.level` は 3）のままです。
+* 地番の町字のみが対象です。住居表示の町字では何もしません。
+
 ### エラー処理
 
 `normalize()` は住所データの取得に失敗した場合、例外を投げます。取得できなかった住所を低い `level` で返すことはしません。低い `level` が返るのは、入力された住所文字列をそこまでしか判別できなかった場合だけです。
