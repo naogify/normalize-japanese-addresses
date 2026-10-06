@@ -1,5 +1,8 @@
 # @geolonia/normalize-japanese-addresses
 
+> **naogify の作業用 fork です。** 上流で実測した問題の記録（issues）と修正の試作を置いています。
+> 最終的に本家（geolonia）へフィードバックするための下書きで、本家の公式な配布物ではありません。
+
 [![build](https://github.com/geolonia/normalize-japanese-addresses/actions/workflows/build.yml/badge.svg)](https://github.com/geolonia/normalize-japanese-addresses/actions/workflows/build.yml)
 
 オープンソースの住所正規化ライブラリです。
